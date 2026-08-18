@@ -103,6 +103,9 @@ module spatz_controller
   // CSR registers
   vlen_t   vstart_d,  vstart_q;
   vlen_t   vl_d,      vl_q;
+`ifdef ENABLE_VLXBLK
+  vlen_t   blk_len_d, blk_len_q;
+`endif
   vtype_t  vtype_d,   vtype_q;
 `ifdef VENTAGLIO
   logic    vtl_en_d,  vtl_en_q;     // VTL extension enable (1: VTL enabled; 0: VTL disabled)
@@ -112,6 +115,9 @@ module spatz_controller
 
   `FF(vstart_q,  vstart_d,  '0)
   `FF(vl_q,      vl_d,      '0)
+`ifdef ENABLE_VLXBLK
+  `FF(blk_len_q, blk_len_d, vlen_t'(8))
+`endif
   `FF(vtype_q,   vtype_d,   '{vill: 1'b1, vsew: EW_8, vlmul: LMUL_1, default: '0})
 `ifdef VENTAGLIO
   `FF(vtl_en_q,  vtl_en_d, 1'b0)     // VTL extension enable
@@ -119,12 +125,14 @@ module spatz_controller
   `FF(VTL_cfg_q, VTL_cfg_d, '0)
 `endif
 
-
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
 
     vstart_d   = vstart_q;
     vl_d       = vl_q;
+`ifdef ENABLE_VLXBLK
+    blk_len_d  = blk_len_q;
+`endif
     vtype_d    = vtype_q;
 `ifdef VENTAGLIO
     vtl_en_d   = vtl_en_q;   // VTL extension enable
@@ -203,6 +211,11 @@ module spatz_controller
           end
         end
       end // spatz_req.op == VCFG
+
+`ifdef ENABLE_VLXBLK
+      if (spatz_req.op == VSETBLKLEN)
+        blk_len_d = vlen_t'(spatz_req.rs1);
+`endif
     end // spatz_req_valid
   end
 
@@ -797,6 +810,10 @@ module spatz_controller
                            (VTL_cfg_q.sp_cfg_ratio == SP_RATIO_050) ? spatz_req.op_vtl.old_vd << 1 : spatz_req.op_vtl.old_vd;
           end
 `endif
+`ifdef ENABLE_VLXBLK
+          if (spatz_req.op == VLXBLK)
+            spatz_req.op_mem.blk_len = blk_len_q;
+`endif
         end
 
         SLD: begin
@@ -957,7 +974,7 @@ module spatz_controller
         end
         rsp_d.id    = spatz_req.rd;
         rsp_valid_d = 1'b1;
-      end else begin
+      end else if (spatz_req.op == VCFG) begin
         // Change configuration and send back vl
         rsp_d.id    = spatz_req.rd;
         rsp_d.data  = elen_t'(vl_d);

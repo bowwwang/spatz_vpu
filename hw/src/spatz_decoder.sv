@@ -93,12 +93,11 @@ module spatz_decoder
           automatic vreg_t ls_vd         = decoder_req_i.instr[11:7];
           automatic vreg_t ls_rs1        = decoder_req_i.instr[19:15];
           automatic vreg_t ls_s2         = decoder_req_i.instr[24:20];
-          automatic logic [2:0] ls_width = decoder_req_i.instr[14:12];
+          automatic logic [2:0] ls_width = decoder_req_i.instr[14:12];//index ew
           automatic logic ls_vm          = decoder_req_i.instr[25];
           automatic logic [1:0] ls_mop   = decoder_req_i.instr[27:26];
           automatic logic ls_mew         = decoder_req_i.instr[28];
           automatic logic [2:0] ls_nf    = decoder_req_i.instr[31:29];
-
           // Retrieve VSEW
           unique case ({ls_mew, ls_width})
             4'b0000: spatz_req.vtype.vsew = EW_8;
@@ -107,7 +106,6 @@ module spatz_decoder
             4'b0111: spatz_req.vtype.vsew = EW_64;
             default: illegal_instr        = 1'b1;
           endcase
-
           spatz_req.op_mem.vm = ls_vm;
           spatz_req.ex_unit   = LSU;
 
@@ -190,7 +188,6 @@ module spatz_decoder
               spatz_req.op_mem.ew  = spatz_req.vtype.vsew;
               spatz_req.vtype.vsew = decoder_req_i.vtype.vsew;
             end
-
             riscv_instr::VSE8_V,
             riscv_instr::VSE16_V,
             riscv_instr::VSE32_V,
@@ -250,6 +247,50 @@ module spatz_decoder
               illegal_instr = 1'b1;
           endcase // decoder_req_i.instr
         end
+
+`ifdef ENABLE_VLXBLK
+        riscv_instr::VLXBLKEI8_V,
+        riscv_instr::VLXBLKEI16_V: begin
+          automatic vreg_t blk_vd         = decoder_req_i.instr[11:7];
+          automatic vreg_t blk_vs2        = decoder_req_i.instr[24:20];
+          automatic logic [2:0] blk_width = decoder_req_i.instr[14:12];
+
+          spatz_req.op             = VLXBLK;
+          spatz_req.ex_unit        = LSU;
+          spatz_req.op_mem.is_load = 1'b1;
+
+          // Controller's LSU dispatch overwrites vd from old_vd; mirror the
+          // regular load/store branches and pass vd through op_vtl.old_vd.
+          // spatz_req.vd          = blk_vd;
+          spatz_req.op_vtl.old_vd  = blk_vd;
+          spatz_req.use_vd         = 1'b1;
+
+          spatz_req.rs1            = decoder_req_i.rs1;
+
+          spatz_req.vs2            = blk_vs2;
+          spatz_req.use_vs2        = 1'b1;
+
+          // New custom encoding has no vm field. Treat as unmasked.
+          spatz_req.op_mem.vm      = 1'b1;
+
+          // Indexed block load:
+          // op_mem.ew = index element width
+          // vtype.vsew = data element width from current vtype CSR
+          unique case (blk_width)
+            3'b000: spatz_req.op_mem.ew = EW_8;
+            3'b101: spatz_req.op_mem.ew = EW_16;
+            default: illegal_instr = 1'b1;
+          endcase
+
+          spatz_req.vtype.vsew = decoder_req_i.vtype.vsew;
+        end
+
+        riscv_instr::VSETBLKLEN: begin
+          spatz_req.op      = VSETBLKLEN;
+          spatz_req.ex_unit = CON;
+          spatz_req.rs1     = decoder_req_i.rs1;
+        end
+`endif
 
         // Vector instruction
         riscv_instr::VADD_VV,
