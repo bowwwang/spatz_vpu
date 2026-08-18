@@ -494,9 +494,10 @@ module spatz_vlsu
     logic [$bits(vlen_t)-1:0] idx_gbyte;
 
 `ifdef ENABLE_VLXBLK
-    // Indexed block load (VLXBLK): one index per block of blk_len elements.
-    vlen_t       blk_len;
-    vlen_t       blk_bytes;
+    // Indexed block load (VLXBLK): one index per block of 2**blk_log2
+    // elements. All block arithmetic is shift/mask (power-of-two block
+    // lengths only, normalized in the controller) - no divider/multiplier.
+    logic [3:0]  blk_log2;
     vlen_t       data_byte_idx;
     vlen_t       data_elem_idx;
     vlen_t       blk_idx;
@@ -510,21 +511,19 @@ module spatz_vlsu
 
 `ifdef ENABLE_VLXBLK
     always_comb begin : gen_blk_idx
-      blk_len       = '0;
-      blk_bytes     = '0;
+      blk_log2      = '0;
       data_byte_idx = '0;
       data_elem_idx = '0;
       blk_idx       = '0;
       blk_elem_off  = '0;
       if (mem_is_indexed_blk) begin
-        blk_len   = mem_spatz_req.op_mem.blk_len == '0 ? vlen_t'(1) : mem_spatz_req.op_mem.blk_len;
-        blk_bytes = blk_len << mem_spatz_req.vtype.vsew;
+        blk_log2 = mem_spatz_req.op_mem.blk_log2;
         // Global byte position of this port's current data beat
         data_byte_idx = {mem_counter_q[port][$bits(vlen_t)-1:MAXEW] << $clog2(NrMemPorts),
                          mem_counter_q[port][int'(MAXEW)-1:0]} + (port << MAXEW);
         data_elem_idx = data_byte_idx >> mem_spatz_req.vtype.vsew;
-        blk_idx       = data_elem_idx / blk_len;
-        blk_elem_off  = data_elem_idx % blk_len;
+        blk_idx       = data_elem_idx >> blk_log2;
+        blk_elem_off  = data_elem_idx & ((vlen_t'(1) << blk_log2) - 1);
       end
     end
 
@@ -570,7 +569,8 @@ module spatz_vlsu
             EW_16: index_value = {16'b0, vrf_rdata_i[1][8 * word_index +: 16]};
             default: index_value = vrf_rdata_i[1][8 * word_index +: 32];
           endcase
-          offset = (index_value * blk_bytes) + (blk_elem_off << mem_spatz_req.vtype.vsew);
+          offset = (index_value << (blk_log2 + mem_spatz_req.vtype.vsew))
+                 + (blk_elem_off << mem_spatz_req.vtype.vsew);
         end else begin
           unique case (mem_spatz_req.op_mem.ew)
             EW_8 : offset   = $signed(vrf_rdata_i[1][8 * word_index +: 8]);

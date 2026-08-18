@@ -208,7 +208,9 @@ package spatz_pkg;
     logic vm;
     logic is_load;
     vew_e ew;
-    vlen_t blk_len;
+    // VLXBLK: log2 of the block length in elements (block length is
+    // constrained to a power of two; normalized in the controller)
+    logic [3:0] blk_log2;
   } op_mem_t;
 
   typedef struct packed {

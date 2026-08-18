@@ -104,7 +104,7 @@ module spatz_controller
   vlen_t   vstart_d,  vstart_q;
   vlen_t   vl_d,      vl_q;
 `ifdef ENABLE_VLXBLK
-  vlen_t   blk_len_d, blk_len_q;
+  logic [3:0] blk_log2_d, blk_log2_q;
 `endif
   vtype_t  vtype_d,   vtype_q;
 `ifdef VENTAGLIO
@@ -116,7 +116,7 @@ module spatz_controller
   `FF(vstart_q,  vstart_d,  '0)
   `FF(vl_q,      vl_d,      '0)
 `ifdef ENABLE_VLXBLK
-  `FF(blk_len_q, blk_len_d, vlen_t'(8))
+  `FF(blk_log2_q, blk_log2_d, 4'd3)  // reset block length: 8 elements
 `endif
   `FF(vtype_q,   vtype_d,   '{vill: 1'b1, vsew: EW_8, vlmul: LMUL_1, default: '0})
 `ifdef VENTAGLIO
@@ -131,7 +131,7 @@ module spatz_controller
     vstart_d   = vstart_q;
     vl_d       = vl_q;
 `ifdef ENABLE_VLXBLK
-    blk_len_d  = blk_len_q;
+    blk_log2_d = blk_log2_q;
 `endif
     vtype_d    = vtype_q;
 `ifdef VENTAGLIO
@@ -213,8 +213,15 @@ module spatz_controller
       end // spatz_req.op == VCFG
 
 `ifdef ENABLE_VLXBLK
-      if (spatz_req.op == VSETBLKLEN)
-        blk_len_d = vlen_t'(spatz_req.rs1);
+      if (spatz_req.op == VSETBLKLEN) begin
+        // The block length must be a power of two; normalize to
+        // floor(log2(rs1)) so the VLSU address path stays shift/mask only
+        // (rs1 == 0 behaves as block length 1).
+        blk_log2_d = '0;
+        for (int unsigned b = 0; b < $bits(vlen_t); b++)
+          if (spatz_req.rs1[b])
+            blk_log2_d = 4'(b);
+      end
 `endif
     end // spatz_req_valid
   end
@@ -812,7 +819,7 @@ module spatz_controller
 `endif
 `ifdef ENABLE_VLXBLK
           if (spatz_req.op == VLXBLK)
-            spatz_req.op_mem.blk_len = blk_len_q;
+            spatz_req.op_mem.blk_log2 = blk_log2_q;
 `endif
         end
 
