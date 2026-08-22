@@ -407,8 +407,14 @@ module spatz_doublebw_vlsu
       commit_insn_push                     = 1'b1;
     end
 
-    // Did an instruction finished its requests?
-    if (&(mem_port_finished_q | (mem_port_finished_d & mem_counter_en)) & !write_pending) begin
+    // Did an instruction finish its requests? Retire it from the mem queue
+    // only once its commit-queue entry exists (pushed earlier, or pushed
+    // this same cycle): a short load arriving at a FULL commit queue can
+    // finish all its requests within a cycle and would otherwise retire
+    // unpushed - its write-back and response are then lost and the
+    // scoreboard deadlocks (hit with 4 back-to-back 1-beat index loads).
+    if (&(mem_port_finished_q | (mem_port_finished_d & mem_counter_en)) & !write_pending
+        & (mem_insn_pending_q[mem_spatz_req.id] | commit_insn_push)) begin
       mem_insn_finished_d[mem_spatz_req.id] = 1'b1;
       mem_spatz_req_ready                   = 1'b1;
     end
@@ -1353,7 +1359,15 @@ module spatz_doublebw_vlsu
       // Propagate request ID
       vrf_req_d[intf].rsp.id    = commit_insn_q.id;
       vrf_req_d[intf].rsp.intf_id = intf;
-      vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf] && mem_insn_finished_d[commit_insn_q.id];
+      // Per-interface completion flag. Depend only on THIS interface's
+      // commit progress: gating on the global mem_insn_finished_d races
+      // when one interface's last write drains while the other's memory
+      // responses are still in flight - the flag is then never set, the
+      // cross-interface merge (&vrf_commit_intf_valid) never fires, and
+      // the instruction's response is lost (scoreboard deadlock). The
+      // merge itself already guarantees both halves committed before the
+      // response reaches the controller.
+      vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf];
       vrf_req_d[intf].commit_vl = commit_insn_q.vl;
 
       // Request indexes
