@@ -553,9 +553,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
 
 `ifdef DOUBLE_BW
   spatz_doublebw_vlsu #(
-    .NrMemPorts      (NrMemPorts      ),
-    .spatz_mem_req_t (spatz_mem_req_t ),
-    .spatz_mem_rsp_t (spatz_mem_rsp_t )
+    .NrMemPorts        (NrMemPorts         ),
+    .NrOutstandingLoads(NumOutstandingLoads),
+    .spatz_mem_req_t   (spatz_mem_req_t    ),
+    .spatz_mem_rsp_t   (spatz_mem_rsp_t    )
   ) i_vlsu (
     .clk_i                   (clk_i                                                ),
     .rst_ni                  (rst_ni                                               ),
@@ -593,9 +594,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   );
 `else
   spatz_vlsu #(
-    .NrMemPorts      (NrMemPorts      ),
-    .spatz_mem_req_t (spatz_mem_req_t ),
-    .spatz_mem_rsp_t (spatz_mem_rsp_t )
+    .NrMemPorts        (NrMemPorts         ),
+    // Was silently left at the module default (8): the config knob
+    // num_spatz_outstanding_loads never reached the VLSU, and the
+    // cluster-side request-id field width (derived from the knob)
+    // mismatched the VLSU's internal id width -- id truncation corrupted
+    // gathers once TCDM latency put >4 requests in flight per port.
+    .NrOutstandingLoads(NumOutstandingLoads),
+    .spatz_mem_req_t   (spatz_mem_req_t    ),
+    .spatz_mem_rsp_t   (spatz_mem_rsp_t    )
   ) i_vlsu (
     .clk_i                   (clk_i                                                ),
     .rst_ni                  (rst_ni                                               ),
